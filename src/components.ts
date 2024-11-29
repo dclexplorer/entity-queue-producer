@@ -33,8 +33,8 @@ export async function initComponents(): Promise<AppComponents> {
   const downloadsFolder = 'content'
 
   const bucket = await config.getString('BUCKET')
-  const snsArn = await config.getString('SNS_ARN')
-  const eventSnsArn = await config.getString('EVENTS_SNS_ARN')
+  const scenesSnsArn = await config.getString('SCENE_SNS_ARN')
+  const wearableEmotesSnsArn = await config.getString('WEARABLE_EMOTES_SNS')
   const optionalSnsEndpoint = await config.getString('SNS_ENDPOINT')
 
   const storage = bucket
@@ -48,8 +48,8 @@ export async function initComponents(): Promise<AppComponents> {
   })
 
   const sns: SnsComponent = {
-    arn: snsArn,
-    eventArn: eventSnsArn,
+    scenesArn: scenesSnsArn,
+    wearableEmotesArn: wearableEmotesSnsArn,
     optionalSnsEndpoint
   }
 

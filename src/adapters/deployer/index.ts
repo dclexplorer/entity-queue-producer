@@ -1,8 +1,8 @@
-import { downloadEntityAndContentFiles } from '@dcl/snapshots-fetcher'
 import { IDeployerComponent } from '@dcl/snapshots-fetcher/dist/types'
 import { PublishCommand, SNSClient } from '@aws-sdk/client-sns'
 import { AppComponents } from '../../types'
 import { DeploymentToSqs } from '@dcl/schemas/dist/misc/deployments-to-sqs'
+import { Readable } from 'stream'
 
 export function createDeployerComponent(
   components: Pick<AppComponents, 'logs' | 'storage' | 'downloadQueue' | 'fetch' | 'metrics' | 'sns'>
@@ -19,34 +19,20 @@ export function createDeployerComponent(
       try {
         const exists = await components.storage.exist(entity.entityId)
 
-        const isSnsEntityToSend =
-          (entity.entityType === 'scene' || entity.entityType === 'wearable' || entity.entityType === 'emote') &&
-          !!components.sns.arn
+        const isSceneSnsEntityToSend = entity.entityType === 'scene' && !!components.sns.scenesArn
 
-        const isSnsEventToSend = !!components.sns.eventArn
+        const isWearableEmotesSnsEntityToSend =
+          (entity.entityType === 'wearable' || entity.entityType === 'emote') && !!components.sns.wearableEmotesArn
 
-        if (exists || !(isSnsEntityToSend && isSnsEventToSend)) {
+        if (exists || (isSceneSnsEntityToSend === false && isWearableEmotesSnsEntityToSend === false)) {
           return await markAsDeployed()
         }
 
         await components.downloadQueue.onSizeLessThan(1000)
 
         void components.downloadQueue.scheduleJob(async () => {
-          logger.info('Downloading entity', {
-            entityId: entity.entityId,
-            entityType: entity.entityType,
-            servers: servers.join(',')
-          })
-
-          await downloadEntityAndContentFiles(
-            { ...components, fetcher: components.fetch },
-            entity.entityId,
-            servers,
-            new Map(),
-            'content',
-            10,
-            1000
-          )
+          // touch
+          await components.storage.storeStream(entity.entityId, Readable.from([]))
 
           logger.info('Entity stored', { entityId: entity.entityId, entityType: entity.entityType })
 
@@ -56,27 +42,27 @@ export function createDeployerComponent(
           }
 
           // send sns
-          if (isSnsEntityToSend) {
+          if (isSceneSnsEntityToSend) {
             const receipt = await client.send(
               new PublishCommand({
-                TopicArn: components.sns.arn,
+                TopicArn: components.sns.scenesArn,
                 Message: JSON.stringify(deploymentToSqs)
               })
             )
-            logger.info('Notification sent', {
+            logger.info('Notification sent to scenes', {
               messageId: receipt.MessageId as any,
               sequenceNumber: receipt.SequenceNumber as any
             })
           }
 
-          if (isSnsEventToSend) {
+          if (isWearableEmotesSnsEntityToSend) {
             const receipt = await client.send(
               new PublishCommand({
-                TopicArn: components.sns.eventArn,
+                TopicArn: components.sns.wearableEmotesArn,
                 Message: JSON.stringify(deploymentToSqs)
               })
             )
-            logger.info('Notification sent to events SNS', {
+            logger.info('Notification sent to wearables/emotes', {
               MessageId: receipt.MessageId as any,
               SequenceNumber: receipt.SequenceNumber as any
             })
@@ -102,6 +88,8 @@ export function createDeployerComponent(
         }
       }
     },
-    async onIdle() {}
+    async onIdle() {
+      logger.info('onIdle')
+    }
   }
 }
