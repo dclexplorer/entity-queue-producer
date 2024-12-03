@@ -5,7 +5,8 @@ import { DeploymentToSqs } from '@dcl/schemas/dist/misc/deployments-to-sqs'
 import { Readable } from 'stream'
 
 export function createDeployerComponent(
-  components: Pick<AppComponents, 'logs' | 'storage' | 'downloadQueue' | 'fetch' | 'metrics' | 'sns'>
+  components: Pick<AppComponents, 'logs' | 'storage' | 'downloadQueue' | 'fetch' | 'metrics' | 'sns'>,
+  rectFilter: string | undefined
 ): IDeployerComponent {
   const logger = components.logs.getLogger('downloader')
 
@@ -23,6 +24,26 @@ export function createDeployerComponent(
 
         const isWearableEmotesSnsEntityToSend =
           (entity.entityType === 'wearable' || entity.entityType === 'emote') && !!components.sns.wearableEmotesArn
+
+        if (rectFilter && entity.pointers && isSceneSnsEntityToSend) {
+          const pointers = entity.pointers
+          // Parse the rectFilter into numeric values
+          const [minX, minY, maxX, maxY] = rectFilter.split(',').map(Number)
+
+          // Filter the pointers based on the rectFilter
+          const pointerIsInside = pointers.some((pointer) => {
+            const [x, y] = pointer.split(',').map(Number) // Parse x and y values from pointer
+            return x >= minX && x <= maxX && y >= minY && y <= maxY // Check if the point is within the bounds
+          })
+
+          if (!pointerIsInside) {
+            logger.info('scene ignored: ', {
+              pointerIsInside: JSON.stringify(pointerIsInside),
+              pointers: JSON.stringify(pointers)
+            })
+            return await markAsDeployed()
+          }
+        }
 
         if (exists || (isSceneSnsEntityToSend === false && isWearableEmotesSnsEntityToSend === false)) {
           return await markAsDeployed()

@@ -53,7 +53,8 @@ export async function initComponents(): Promise<AppComponents> {
     optionalSnsEndpoint
   }
 
-  const deployer = createDeployerComponent({ storage, downloadQueue, fetch, logs, metrics, sns })
+  const rectFilter = await config.getString('RECT_FILTER')
+  const deployer = createDeployerComponent({ storage, downloadQueue, fetch, logs, metrics, sns }, rectFilter)
 
   const key = (hash: string) => `stored-snapshot-${hash}`
 
