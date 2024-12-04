@@ -3,7 +3,7 @@ import { createServerComponent, createStatusCheckComponent } from '@well-known-c
 import { createLogComponent } from '@well-known-components/logger'
 import { createFetchComponent } from './adapters/fetch'
 import { createMetricsComponent, instrumentHttpServerWithMetrics } from '@well-known-components/metrics'
-import { AppComponents, GlobalContext, SnsComponent } from './types'
+import { AppComponents, GlobalContext } from './types'
 import { metricDeclarations } from './metrics'
 import { createJobQueue } from '@dcl/snapshots-fetcher/dist/job-queue-port'
 import { createSynchronizer } from '@dcl/snapshots-fetcher'
@@ -15,6 +15,7 @@ import {
   createFsComponent
 } from '@dcl/catalyst-storage'
 import { Readable } from 'stream'
+import { createSnsAdapterComponent } from './adapters/sns'
 
 // Initialize all the components of the app
 export async function initComponents(): Promise<AppComponents> {
@@ -33,9 +34,23 @@ export async function initComponents(): Promise<AppComponents> {
   const downloadsFolder = 'content'
 
   const bucket = await config.getString('BUCKET')
-  const scenesSnsArn = await config.getString('SCENE_SNS_ARN')
-  const wearableEmotesSnsArn = await config.getString('WEARABLE_EMOTES_SNS')
+
   const optionalSnsEndpoint = await config.getString('SNS_ENDPOINT')
+  const scenesSnsArn = await config.getString('SCENE_SNS_ARN')
+  const priorityScenesSnsArn = await config.getString('PRIORITY_SCENE_SNS_ARN')
+  const wearableEmotesSnsArn = await config.getString('WEARABLE_EMOTES_SNS')
+
+  const sceneSnsAdapter = scenesSnsArn
+    ? createSnsAdapterComponent({ logs }, { snsArn: scenesSnsArn, snsEndpoint: optionalSnsEndpoint })
+    : undefined
+
+  const prioritySceneSnsAdapter = priorityScenesSnsArn
+    ? createSnsAdapterComponent({ logs }, { snsArn: priorityScenesSnsArn, snsEndpoint: optionalSnsEndpoint })
+    : undefined
+
+  const wearableEmotesSnsAdapter = wearableEmotesSnsArn
+    ? createSnsAdapterComponent({ logs }, { snsArn: wearableEmotesSnsArn, snsEndpoint: optionalSnsEndpoint })
+    : undefined
 
   const storage = bucket
     ? await createAwsS3BasedFileSystemContentStorage({ fs, config }, bucket)
@@ -47,14 +62,12 @@ export async function initComponents(): Promise<AppComponents> {
     timeout: 100000
   })
 
-  const sns: SnsComponent = {
-    scenesArn: scenesSnsArn,
-    wearableEmotesArn: wearableEmotesSnsArn,
-    optionalSnsEndpoint
-  }
-
   const rectFilter = await config.getString('RECT_FILTER')
-  const deployer = createDeployerComponent({ storage, downloadQueue, fetch, logs, metrics, sns }, rectFilter)
+  const deployer = createDeployerComponent(
+    { storage, downloadQueue, fetch, logs, metrics },
+    { sceneSnsAdapter, wearableEmotesSnsAdapter },
+    rectFilter
+  )
 
   const key = (hash: string) => `stored-snapshot-${hash}`
 
@@ -131,6 +144,8 @@ export async function initComponents(): Promise<AppComponents> {
     downloadQueue,
     synchronizer,
     deployer,
-    sns
+    sceneSnsAdapter,
+    prioritySceneSnsAdapter,
+    wearableEmotesSnsAdapter
   }
 }
