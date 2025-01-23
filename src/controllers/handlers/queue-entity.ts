@@ -16,7 +16,7 @@ export async function addQueueHandler(
 
   const body = await request.json()
 
-  if (!DeploymentToSqs.validate(body)) return { status: 403, body: { errors: DeploymentToSqs.validate.errors } }
+  //if (!DeploymentToSqs.validate(body)) return { status: 403, body: { errors: DeploymentToSqs.validate.errors } }
 
   const shouldPrioritize = !!(body as any)?.prioritize
 

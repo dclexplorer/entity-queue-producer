@@ -8,7 +8,7 @@ export async function setupRouter(_: GlobalContext): Promise<Router<GlobalContex
   const router = new Router<GlobalContext>()
 
   router.get('/ping', pingHandler)
-  router.get('/queue-task', addQueueHandler)
+  router.post('/queue-task', addQueueHandler)
 
   return router
 }

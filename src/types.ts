@@ -28,14 +28,14 @@ export type BaseComponents = {
   storage: IContentStorageComponent
   synchronizer: SynchronizerComponent
   deployer: IDeployerComponent
-  sceneSnsAdapter?: ISNSAdapterComponent
-  prioritySceneSnsAdapter?: ISNSAdapterComponent
-  wearableEmotesSnsAdapter?: ISNSAdapterComponent
 }
 
 // components used in runtime
 export type AppComponents = BaseComponents & {
   statusChecks: IBaseComponent
+  sceneSnsAdapter?: ISNSAdapterComponent
+  prioritySceneSnsAdapter?: ISNSAdapterComponent
+  wearableEmotesSnsAdapter?: ISNSAdapterComponent
 }
 
 // components used in tests
