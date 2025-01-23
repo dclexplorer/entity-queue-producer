@@ -10,6 +10,7 @@ import type {
 } from '@well-known-components/interfaces'
 import { IContentStorageComponent, IFileSystemComponent } from '@dcl/catalyst-storage'
 import { metricDeclarations } from './metrics'
+import { ISNSAdapterComponent } from './adapters/sns'
 
 export type GlobalContext = {
   components: BaseComponents
@@ -27,14 +28,14 @@ export type BaseComponents = {
   storage: IContentStorageComponent
   synchronizer: SynchronizerComponent
   deployer: IDeployerComponent
-  sns: SnsComponent
 }
-
-export type SnsComponent = { scenesArn?: string; wearableEmotesArn?: string; optionalSnsEndpoint?: string }
 
 // components used in runtime
 export type AppComponents = BaseComponents & {
   statusChecks: IBaseComponent
+  sceneSnsAdapter?: ISNSAdapterComponent
+  prioritySceneSnsAdapter?: ISNSAdapterComponent
+  wearableEmotesSnsAdapter?: ISNSAdapterComponent
 }
 
 // components used in tests

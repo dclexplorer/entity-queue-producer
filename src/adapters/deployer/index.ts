@@ -1,18 +1,18 @@
 import { IDeployerComponent } from '@dcl/snapshots-fetcher/dist/types'
-import { PublishCommand, SNSClient } from '@aws-sdk/client-sns'
 import { AppComponents } from '../../types'
 import { DeploymentToSqs } from '@dcl/schemas/dist/misc/deployments-to-sqs'
 import { Readable } from 'stream'
+import { ISNSAdapterComponent } from '../sns'
 
 export function createDeployerComponent(
-  components: Pick<AppComponents, 'logs' | 'storage' | 'downloadQueue' | 'fetch' | 'metrics' | 'sns'>,
+  components: Pick<AppComponents, 'logs' | 'storage' | 'downloadQueue' | 'fetch' | 'metrics'>,
+  {
+    sceneSnsAdapter,
+    wearableEmotesSnsAdapter
+  }: { sceneSnsAdapter?: ISNSAdapterComponent; wearableEmotesSnsAdapter?: ISNSAdapterComponent },
   rectFilter: string | undefined
 ): IDeployerComponent {
   const logger = components.logs.getLogger('downloader')
-
-  const client = new SNSClient({
-    endpoint: components.sns.optionalSnsEndpoint
-  })
 
   return {
     async deployEntity(entity, servers) {
@@ -20,10 +20,10 @@ export function createDeployerComponent(
       try {
         const exists = await components.storage.exist(entity.entityId)
 
-        const isSceneSnsEntityToSend = entity.entityType === 'scene' && !!components.sns.scenesArn
+        const isSceneSnsEntityToSend = entity.entityType === 'scene' && !!sceneSnsAdapter
 
         const isWearableEmotesSnsEntityToSend =
-          (entity.entityType === 'wearable' || entity.entityType === 'emote') && !!components.sns.wearableEmotesArn
+          (entity.entityType === 'wearable' || entity.entityType === 'emote') && !!wearableEmotesSnsAdapter
 
         if (rectFilter && entity.pointers && isSceneSnsEntityToSend) {
           const pointers = entity.pointers
@@ -64,29 +64,11 @@ export function createDeployerComponent(
 
           // send sns
           if (isSceneSnsEntityToSend) {
-            const receipt = await client.send(
-              new PublishCommand({
-                TopicArn: components.sns.scenesArn,
-                Message: JSON.stringify(deploymentToSqs)
-              })
-            )
-            logger.info('Notification sent to scenes', {
-              messageId: receipt.MessageId as any,
-              sequenceNumber: receipt.SequenceNumber as any
-            })
+            await sceneSnsAdapter.publish(deploymentToSqs)
           }
 
           if (isWearableEmotesSnsEntityToSend) {
-            const receipt = await client.send(
-              new PublishCommand({
-                TopicArn: components.sns.wearableEmotesArn,
-                Message: JSON.stringify(deploymentToSqs)
-              })
-            )
-            logger.info('Notification sent to wearables/emotes', {
-              MessageId: receipt.MessageId as any,
-              SequenceNumber: receipt.SequenceNumber as any
-            })
+            await wearableEmotesSnsAdapter.publish(deploymentToSqs)
           }
           await markAsDeployed()
         })
