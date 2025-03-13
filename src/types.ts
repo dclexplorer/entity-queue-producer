@@ -36,6 +36,7 @@ export type AppComponents = BaseComponents & {
   sceneSnsAdapter?: ISNSAdapterComponent
   prioritySceneSnsAdapter?: ISNSAdapterComponent
   wearableEmotesSnsAdapter?: ISNSAdapterComponent
+  worldSyncService?: IBaseComponent
 }
 
 // components used in tests

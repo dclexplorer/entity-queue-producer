@@ -16,6 +16,7 @@ import {
 } from '@dcl/catalyst-storage'
 import { Readable } from 'stream'
 import { createSnsAdapterComponent } from './adapters/sns'
+import { createWorldSync } from './adapters/worlds-sync'
 
 // Initialize all the components of the app
 export async function initComponents(): Promise<AppComponents> {
@@ -55,6 +56,8 @@ export async function initComponents(): Promise<AppComponents> {
   const storage = bucket
     ? await createAwsS3BasedFileSystemContentStorage({ fs, config }, bucket)
     : await createFolderBasedFileSystemContentStorage({ fs }, downloadsFolder)
+
+  const worldSyncService = sceneSnsAdapter ? createWorldSync({ logs, storage, fetch }, sceneSnsAdapter) : undefined
 
   const downloadQueue = createJobQueue({
     autoStart: true,
@@ -146,6 +149,7 @@ export async function initComponents(): Promise<AppComponents> {
     deployer,
     sceneSnsAdapter,
     prioritySceneSnsAdapter,
-    wearableEmotesSnsAdapter
+    wearableEmotesSnsAdapter,
+    worldSyncService
   }
 }
