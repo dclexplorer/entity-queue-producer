@@ -31,6 +31,7 @@ export type BaseComponents = {
   sceneSnsAdapter?: ISNSAdapterComponent
   prioritySceneSnsAdapter?: ISNSAdapterComponent
   wearableEmotesSnsAdapter?: ISNSAdapterComponent
+  worldSyncService?: IBaseComponent
 }
 
 // components used in runtime
