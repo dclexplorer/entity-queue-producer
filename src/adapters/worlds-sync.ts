@@ -26,7 +26,7 @@ export function createWorldSync(
       }
 
       // Extracting scene IDs
-      const sceneIds: string[] = data.data.map((world: any) => world.scenes.map((scene: any) => scene.id))
+      const sceneIds: string[] = data.data.flatMap((world: any) => world.scenes.map((scene: any) => scene.id))
       return sceneIds
     } catch (error) {
       logger.error('Error fetching scene IDs:' + error)
@@ -42,21 +42,22 @@ export function createWorldSync(
     logger.info('World sync service started')
     while (true) {
       const sceneIds = await fetchSceneIds()
-      for (const sceneId in sceneIds) {
+      for (const sceneId of sceneIds) {
+        const storeKey = `${sceneId}-v2`
         try {
-          if (!(await storage.exist(sceneId))) {
+          if (!(await storage.exist(storeKey))) {
             const deploymentToSqs: DeploymentToSqs = {
               entity: {
                 entityId: sceneId,
                 authChain: []
               },
-              contentServerUrls: ['https://worlds-content-server.decentraland.org/contents']
+              contentServerUrls: ['https://worlds-content-server.decentraland.org']
             }
 
             // send sns
             await sceneSnsAdapter.publish(deploymentToSqs)
 
-            await storage.storeStream(sceneId, Readable.from([]))
+            await storage.storeStream(storeKey, Readable.from([]))
 
             logger.info('World deployed ' + sceneId)
           }
