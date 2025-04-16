@@ -11,6 +11,10 @@ export function createWorldSync(
   sceneSnsAdapter: ISNSAdapterComponent | undefined
 ): IBaseComponent {
   const logger = logs.getLogger('world-sync')
+
+  let shouldRun = false
+  let backgroundTask: Promise<void> | undefined
+
   async function fetchSceneIds(): Promise<string[]> {
     const url = 'https://worlds-content-server.decentraland.org/index'
 
@@ -34,13 +38,16 @@ export function createWorldSync(
     }
   }
 
-  async function start(_: IBaseComponent.ComponentStartOptions): Promise<void> {
+  async function run(): Promise<void> {
+    shouldRun = true
+
     if (sceneSnsAdapter === undefined) {
       logger.error('World sync requires sceneSnsAdapter')
       return
     }
+
     logger.info('World sync service started')
-    while (true) {
+    while (shouldRun) {
       const sceneIds = await fetchSceneIds()
       for (const sceneId of sceneIds) {
         const storeKey = `${sceneId}-v2`
@@ -66,12 +73,27 @@ export function createWorldSync(
         }
       }
 
+      if (!shouldRun) break
+
       logger.info('Wait 10 minutes')
       await delay(60000) // 10 minutes
     }
+
+    logger.info('World sync loop stopped')
+  }
+
+  async function start(_: IBaseComponent.ComponentStartOptions): Promise<void> {
+    backgroundTask = run().catch((err) => logger.error('Sync task crashed: ', err))
+  }
+
+  async function stop(): Promise<void> {
+    logger.info('Stopping world sync...')
+    shouldRun = false
+    await backgroundTask
   }
 
   return {
-    start
+    start,
+    stop
   }
 }
