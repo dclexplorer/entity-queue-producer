@@ -1,4 +1,3 @@
-import { DeploymentToSqs } from '@dcl/schemas/dist/misc/deployments-to-sqs'
 import { HandlerContextWithPath } from '../../types'
 
 // handlers arguments only type what they need, to make unit testing easier

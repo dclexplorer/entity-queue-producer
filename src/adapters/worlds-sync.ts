@@ -24,7 +24,9 @@ export function createWorldSync(
         if (!response.ok) {
           // Retry on 502 Bad Gateway or 503 Service Unavailable
           if ((response.status === 502 || response.status === 503) && attempt < retries) {
-            logger.warn(`HTTP ${response.status} error on attempt ${attempt}/${retries}, retrying in ${attempt * 5} seconds...`)
+            logger.warn(
+              `HTTP ${response.status} error on attempt ${attempt}/${retries}, retrying in ${attempt * 5} seconds...`
+            )
             await delay(attempt * 5000) // Exponential backoff
             continue
           }
@@ -41,14 +43,14 @@ export function createWorldSync(
         return sceneIds
       } catch (error) {
         if (attempt === retries) {
-          logger.error('Error fetching scene IDs after all retries:', error)
+          logger.error('Error fetching scene IDs after all retries:', { error: String(error) })
           throw new Error('Error fetching scene IDs: ' + error)
         }
-        logger.warn(`Error on attempt ${attempt}/${retries}, retrying...`, error)
+        logger.warn(`Error on attempt ${attempt}/${retries}, retrying...`, { error: String(error) })
         await delay(attempt * 5000) // Exponential backoff
       }
     }
-    
+
     // This should never be reached due to the throw in the catch block
     throw new Error('Failed to fetch scene IDs')
   }
@@ -89,7 +91,7 @@ export function createWorldSync(
           }
         }
       } catch (error) {
-        logger.error('Error in world sync iteration:', error)
+        logger.error('Error in world sync iteration:', { error: String(error) })
         // Continue the loop even if fetching fails
       }
 
