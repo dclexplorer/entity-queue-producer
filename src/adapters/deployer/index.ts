@@ -3,13 +3,15 @@ import { AppComponents } from '../../types'
 import { DeploymentToSqs } from '@dcl/schemas/dist/misc/deployments-to-sqs'
 import { Readable } from 'stream'
 import { ISNSAdapterComponent } from '../sns'
+import { IMonitoringReporter } from '../monitoring-reporter'
 
 export function createDeployerComponent(
   components: Pick<AppComponents, 'logs' | 'storage' | 'downloadQueue' | 'fetch' | 'metrics'>,
   {
     sceneSnsAdapter,
-    wearableEmotesSnsAdapter
-  }: { sceneSnsAdapter?: ISNSAdapterComponent; wearableEmotesSnsAdapter?: ISNSAdapterComponent },
+    wearableEmotesSnsAdapter,
+    monitoringReporter
+  }: { sceneSnsAdapter?: ISNSAdapterComponent; wearableEmotesSnsAdapter?: ISNSAdapterComponent; monitoringReporter?: IMonitoringReporter },
   rectFilter: string | undefined
 ): IDeployerComponent {
   const logger = components.logs.getLogger('downloader')
@@ -65,10 +67,12 @@ export function createDeployerComponent(
           // send sns
           if (isSceneSnsEntityToSend) {
             await sceneSnsAdapter.publish(deploymentToSqs)
+            monitoringReporter?.incrementPublished()
           }
 
           if (isWearableEmotesSnsEntityToSend) {
             await wearableEmotesSnsAdapter.publish(deploymentToSqs)
+            monitoringReporter?.incrementPublished()
           }
           await markAsDeployed()
         })

@@ -17,6 +17,7 @@ import {
 import { Readable } from 'stream'
 import { createSnsAdapterComponent } from './adapters/sns'
 import { createWorldSync } from './adapters/worlds-sync'
+import { createMonitoringReporter } from './adapters/monitoring-reporter'
 
 // Initialize all the components of the app
 export async function initComponents(): Promise<AppComponents> {
@@ -59,6 +60,9 @@ export async function initComponents(): Promise<AppComponents> {
 
   const worldSyncService = sceneSnsAdapter ? createWorldSync({ logs, storage, fetch }, sceneSnsAdapter) : undefined
 
+  // Create monitoring reporter
+  const monitoringReporter = createMonitoringReporter({ logs, config, fetch })
+
   const downloadQueue = createJobQueue({
     autoStart: true,
     concurrency: 5,
@@ -68,7 +72,7 @@ export async function initComponents(): Promise<AppComponents> {
   const rectFilter = await config.getString('RECT_FILTER')
   const deployer = createDeployerComponent(
     { storage, downloadQueue, fetch, logs, metrics },
-    { sceneSnsAdapter, wearableEmotesSnsAdapter },
+    { sceneSnsAdapter, wearableEmotesSnsAdapter, monitoringReporter },
     rectFilter
   )
 
@@ -150,6 +154,7 @@ export async function initComponents(): Promise<AppComponents> {
     sceneSnsAdapter,
     prioritySceneSnsAdapter,
     wearableEmotesSnsAdapter,
-    worldSyncService
+    worldSyncService,
+    monitoringReporter
   }
 }

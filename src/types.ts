@@ -11,6 +11,7 @@ import type {
 import { IContentStorageComponent, IFileSystemComponent } from '@dcl/catalyst-storage'
 import { metricDeclarations } from './metrics'
 import { ISNSAdapterComponent } from './adapters/sns'
+import { IMonitoringReporter } from './adapters/monitoring-reporter'
 
 export type GlobalContext = {
   components: BaseComponents
@@ -37,6 +38,7 @@ export type AppComponents = BaseComponents & {
   prioritySceneSnsAdapter?: ISNSAdapterComponent
   wearableEmotesSnsAdapter?: ISNSAdapterComponent
   worldSyncService?: IBaseComponent
+  monitoringReporter: IMonitoringReporter
 }
 
 // components used in tests
