@@ -2,10 +2,7 @@ import type { ILoggerComponent, IConfigComponent, IBaseComponent } from '@well-k
 import type { IFetchComponent } from '@well-known-components/http-server'
 import { SQSClient, GetQueueAttributesCommand, QueueAttributeName } from '@aws-sdk/client-sqs'
 
-export interface IMonitoringReporter extends IBaseComponent {
-  incrementPublished(): void
-  getPublishedCount(): number
-}
+export type IMonitoringReporter = IBaseComponent
 
 interface MonitoringReporterComponents {
   logs: ILoggerComponent
@@ -25,11 +22,6 @@ export function createMonitoringReporter(
   let sqsClient: SQSClient | undefined
   let reportInterval: NodeJS.Timeout | undefined
   let isRunning = false
-
-  // Metrics tracking
-  let messagesPublished = 0
-  let lastReportedCount = 0
-  let lastReportTime = Date.now()
 
   async function initConfig() {
     monitoringUrl = await config.getString('MONITORING_URL')
@@ -99,28 +91,13 @@ export function createMonitoringReporter(
   }
 
   async function sendQueueMetrics() {
-    const now = Date.now()
-    const timeDiffHours = (now - lastReportTime) / 3600000 // Convert to hours
-
-    // Calculate publish rate per hour
-    const newMessages = messagesPublished - lastReportedCount
-    const publishRatePerHour = timeDiffHours > 0 ? newMessages / timeDiffHours : 0
-
-    // Get queue depth from SQS
     const queueDepth = await getQueueDepth()
 
-    const metrics = {
-      messagesPublished,
-      messagesInFlight: queueDepth,
-      publishRatePerHour: Math.round(publishRatePerHour)
-    }
+    logger.info('Reporting queue metrics', { queueDepth })
 
-    logger.info('Reporting queue metrics', metrics)
-
-    report('/api/monitoring/queue-metrics', metrics)
-
-    lastReportedCount = messagesPublished
-    lastReportTime = now
+    report('/api/monitoring/queue-metrics', {
+      queueDepth
+    })
   }
 
   function startReporting() {
@@ -142,24 +119,22 @@ export function createMonitoringReporter(
     }
   }
 
+  async function start(_: IBaseComponent.ComponentStartOptions): Promise<void> {
+    logger.info('Monitoring reporter starting...')
+    await initConfig()
+    isRunning = true
+    startReporting()
+    logger.info('Monitoring reporter started')
+  }
+
+  async function stop(): Promise<void> {
+    logger.info('Monitoring reporter stopping...')
+    isRunning = false
+    stopReporting()
+  }
+
   return {
-    async start() {
-      await initConfig()
-      isRunning = true
-      startReporting()
-    },
-
-    async stop() {
-      isRunning = false
-      stopReporting()
-    },
-
-    incrementPublished() {
-      messagesPublished++
-    },
-
-    getPublishedCount() {
-      return messagesPublished
-    }
+    start,
+    stop
   }
 }

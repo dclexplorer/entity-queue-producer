@@ -72,7 +72,7 @@ export async function initComponents(): Promise<AppComponents> {
   const rectFilter = await config.getString('RECT_FILTER')
   const deployer = createDeployerComponent(
     { storage, downloadQueue, fetch, logs, metrics },
-    { sceneSnsAdapter, wearableEmotesSnsAdapter, monitoringReporter },
+    { sceneSnsAdapter, wearableEmotesSnsAdapter },
     rectFilter
   )
 
