@@ -109,11 +109,15 @@ export function createMonitoringReporter(
     // Get queue depth from SQS
     const queueDepth = await getQueueDepth()
 
-    report('/api/monitoring/queue-metrics', {
+    const metrics = {
       messagesPublished,
       messagesInFlight: queueDepth,
       publishRatePerHour: Math.round(publishRatePerHour)
-    })
+    }
+
+    logger.info('Reporting queue metrics', metrics)
+
+    report('/api/monitoring/queue-metrics', metrics)
 
     lastReportedCount = messagesPublished
     lastReportTime = now
