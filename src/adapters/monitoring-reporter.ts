@@ -36,8 +36,14 @@ export function createMonitoringReporter(
     }
 
     if (sqsQueueUrl) {
-      sqsClient = new SQSClient({ region: awsRegion })
-      logger.info('SQS queue monitoring enabled', { sqsQueueUrl })
+      try {
+        sqsClient = new SQSClient({ region: awsRegion })
+        logger.info('SQS queue monitoring enabled', { sqsQueueUrl })
+      } catch (error) {
+        logger.error('Failed to create SQS client', {
+          error: error instanceof Error ? error.message : 'Unknown error'
+        })
+      }
     } else {
       logger.info('SQS queue monitoring not configured (SQS_QUEUE_URL missing)')
     }
@@ -66,6 +72,7 @@ export function createMonitoringReporter(
 
   async function report(endpoint: string, data: object): Promise<void> {
     if (!monitoringUrl || !monitoringSecret) {
+      logger.debug('Skipping report - not configured')
       return
     }
 
@@ -74,7 +81,7 @@ export function createMonitoringReporter(
       const controller = new AbortController()
       const timeoutId = setTimeout(() => controller.abort(), 5000)
 
-      await fetch.fetch(url, {
+      const response = await fetch.fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...data, secret: monitoringSecret }),
@@ -82,34 +89,55 @@ export function createMonitoringReporter(
       })
 
       clearTimeout(timeoutId)
+
+      if (response.ok) {
+        logger.debug('Report sent successfully', { endpoint })
+      } else {
+        logger.warn('Report failed', { endpoint, status: response.status })
+      }
     } catch (error) {
-      // Silently ignore - monitoring should never block pipeline
-      logger.debug('Monitoring report failed (non-blocking)', {
+      // Log but don't block - monitoring should never block pipeline
+      logger.warn('Monitoring report failed (non-blocking)', {
+        endpoint,
         error: error instanceof Error ? error.message : 'Unknown error'
       })
     }
   }
 
   async function sendQueueMetrics() {
+    logger.info('sendQueueMetrics called')
     const queueDepth = await getQueueDepth()
 
     logger.info('Reporting queue metrics', { queueDepth })
 
-    report('/api/monitoring/queue-metrics', {
+    await report('/api/monitoring/queue-metrics', {
       queueDepth
     })
   }
 
   function startReporting() {
     if (reportInterval) {
+      logger.info('Reporting already started, skipping')
       return
     }
 
+    logger.info('Starting queue metrics reporting (every 30s)')
+
     // Send initial report
-    void sendQueueMetrics()
+    sendQueueMetrics().catch(err => {
+      logger.error('Initial sendQueueMetrics failed', {
+        error: err instanceof Error ? err.message : 'Unknown error'
+      })
+    })
 
     // Set up interval (every 30 seconds)
-    reportInterval = setInterval(() => void sendQueueMetrics(), 30000)
+    reportInterval = setInterval(() => {
+      sendQueueMetrics().catch(err => {
+        logger.error('sendQueueMetrics failed', {
+          error: err instanceof Error ? err.message : 'Unknown error'
+        })
+      })
+    }, 30000)
   }
 
   function stopReporting() {
