@@ -25,6 +25,8 @@ export async function initComponents(): Promise<AppComponents> {
 
   const metrics = await createMetricsComponent(metricDeclarations, { config })
   const logs = await createLogComponent({ metrics })
+  const logger = logs.getLogger('main')
+  logger.info('Queue Producer Started v1.0.0')
   const server = await createServerComponent<GlobalContext>({ config, logs }, {})
   const statusChecks = await createStatusCheckComponent({ server, config })
   const fetch = await createFetchComponent()
