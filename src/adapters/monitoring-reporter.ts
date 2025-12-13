@@ -1,5 +1,6 @@
 import type { ILoggerComponent, IConfigComponent, IBaseComponent } from '@well-known-components/interfaces'
 import type { IFetchComponent } from '@well-known-components/http-server'
+import { SQSClient, GetQueueAttributesCommand, QueueAttributeName } from '@aws-sdk/client-sqs'
 
 export interface IMonitoringReporter extends IBaseComponent {
   incrementPublished(): void
@@ -20,6 +21,8 @@ export function createMonitoringReporter(
 
   let monitoringUrl: string | undefined
   let monitoringSecret: string | undefined
+  let sqsQueueUrl: string | undefined
+  let sqsClient: SQSClient | undefined
   let reportInterval: NodeJS.Timeout | undefined
   let isRunning = false
 
@@ -31,11 +34,41 @@ export function createMonitoringReporter(
   async function initConfig() {
     monitoringUrl = await config.getString('MONITORING_URL')
     monitoringSecret = await config.getString('MONITORING_SECRET')
+    sqsQueueUrl = await config.getString('SQS_QUEUE_URL')
+    const awsRegion = await config.getString('AWS_REGION') || 'us-east-1'
 
     if (!monitoringUrl || !monitoringSecret) {
       logger.info('Monitoring not configured (MONITORING_URL or MONITORING_SECRET missing)')
     } else {
       logger.info('Monitoring configured', { monitoringUrl })
+    }
+
+    if (sqsQueueUrl) {
+      sqsClient = new SQSClient({ region: awsRegion })
+      logger.info('SQS queue monitoring enabled', { sqsQueueUrl })
+    } else {
+      logger.info('SQS queue monitoring not configured (SQS_QUEUE_URL missing)')
+    }
+  }
+
+  async function getQueueDepth(): Promise<number> {
+    if (!sqsClient || !sqsQueueUrl) {
+      return 0
+    }
+
+    try {
+      const command = new GetQueueAttributesCommand({
+        QueueUrl: sqsQueueUrl,
+        AttributeNames: [QueueAttributeName.ApproximateNumberOfMessages]
+      })
+      const response = await sqsClient.send(command)
+      const count = response.Attributes?.ApproximateNumberOfMessages
+      return count ? parseInt(count, 10) : 0
+    } catch (error) {
+      logger.debug('Failed to get SQS queue depth', {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      })
+      return 0
     }
   }
 
@@ -65,18 +98,21 @@ export function createMonitoringReporter(
     }
   }
 
-  function sendQueueMetrics() {
+  async function sendQueueMetrics() {
     const now = Date.now()
-    const timeDiffMinutes = (now - lastReportTime) / 60000
+    const timeDiffHours = (now - lastReportTime) / 3600000 // Convert to hours
 
-    // Calculate publish rate per minute
+    // Calculate publish rate per hour
     const newMessages = messagesPublished - lastReportedCount
-    const publishRatePerMin = timeDiffMinutes > 0 ? newMessages / timeDiffMinutes : 0
+    const publishRatePerHour = timeDiffHours > 0 ? newMessages / timeDiffHours : 0
+
+    // Get queue depth from SQS
+    const queueDepth = await getQueueDepth()
 
     report('/api/monitoring/queue-metrics', {
       messagesPublished,
-      messagesInFlight: 0, // We don't track this on the producer side
-      publishRatePerMin: Math.round(publishRatePerMin * 100) / 100
+      messagesInFlight: queueDepth,
+      publishRatePerHour: Math.round(publishRatePerHour)
     })
 
     lastReportedCount = messagesPublished
@@ -89,10 +125,10 @@ export function createMonitoringReporter(
     }
 
     // Send initial report
-    sendQueueMetrics()
+    void sendQueueMetrics()
 
     // Set up interval (every 30 seconds)
-    reportInterval = setInterval(sendQueueMetrics, 30000)
+    reportInterval = setInterval(() => void sendQueueMetrics(), 30000)
   }
 
   function stopReporting() {
