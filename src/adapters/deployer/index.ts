@@ -1,6 +1,5 @@
 import { IDeployerComponent } from '@dcl/snapshots-fetcher/dist/types'
-import { AppComponents } from '../../types'
-import { DeploymentToSqs } from '@dcl/schemas/dist/misc/deployments-to-sqs'
+import { AppComponents, DeploymentToSqsWithType } from '../../types'
 import { Readable } from 'stream'
 import { ISNSAdapterComponent } from '../sns'
 
@@ -9,7 +8,7 @@ export function createDeployerComponent(
   {
     sceneSnsAdapter,
     wearableEmotesSnsAdapter
-  }: { sceneSnsAdapter?: ISNSAdapterComponent; wearableEmotesSnsAdapter?: ISNSAdapterComponent },
+  }: { sceneSnsAdapter: ISNSAdapterComponent; wearableEmotesSnsAdapter: ISNSAdapterComponent },
   rectFilter: string | undefined
 ): IDeployerComponent {
   const logger = components.logs.getLogger('downloader')
@@ -20,12 +19,11 @@ export function createDeployerComponent(
       try {
         const exists = await components.storage.exist(entity.entityId)
 
-        const isSceneSnsEntityToSend = entity.entityType === 'scene' && !!sceneSnsAdapter
+        const isSceneEntity = entity.entityType === 'scene'
 
-        const isWearableEmotesSnsEntityToSend =
-          (entity.entityType === 'wearable' || entity.entityType === 'emote') && !!wearableEmotesSnsAdapter
+        const isWearableEmotesEntity = entity.entityType === 'wearable' || entity.entityType === 'emote'
 
-        if (rectFilter && entity.pointers && isSceneSnsEntityToSend) {
+        if (rectFilter && entity.pointers && isSceneEntity) {
           const pointers = entity.pointers
           // Parse the rectFilter into numeric values
           const [minX, minY, maxX, maxY] = rectFilter.split(',').map(Number)
@@ -45,7 +43,7 @@ export function createDeployerComponent(
           }
         }
 
-        if (exists || (isSceneSnsEntityToSend === false && isWearableEmotesSnsEntityToSend === false)) {
+        if (exists || (!isSceneEntity && !isWearableEmotesEntity)) {
           return await markAsDeployed()
         }
 
@@ -57,17 +55,21 @@ export function createDeployerComponent(
 
           logger.info('Entity stored', { entityId: entity.entityId, entityType: entity.entityType })
 
-          const deploymentToSqs: DeploymentToSqs = {
-            entity,
+          const deploymentToSqs: DeploymentToSqsWithType = {
+            entity: {
+              entityId: entity.entityId,
+              entityType: entity.entityType,
+              authChain: entity.authChain
+            },
             contentServerUrls: servers
           }
 
           // send sns
-          if (isSceneSnsEntityToSend) {
+          if (isSceneEntity) {
             await sceneSnsAdapter.publish(deploymentToSqs)
           }
 
-          if (isWearableEmotesSnsEntityToSend) {
+          if (isWearableEmotesEntity) {
             await wearableEmotesSnsAdapter.publish(deploymentToSqs)
           }
           await markAsDeployed()

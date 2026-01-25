@@ -15,9 +15,11 @@ import {
   createFsComponent
 } from '@dcl/catalyst-storage'
 import { Readable } from 'stream'
-import { createSnsAdapterComponent } from './adapters/sns'
+import { createSnsAdapterComponent, createNoopSnsAdapterComponent } from './adapters/sns'
 import { createWorldSync } from './adapters/worlds-sync'
 import { createMonitoringReporter } from './adapters/monitoring-reporter'
+import { createNormalizedLRUCache } from './adapters/lru-cache'
+import { createWorldsAdapter } from './adapters/worlds'
 
 // Initialize all the components of the app
 export async function initComponents(): Promise<AppComponents> {
@@ -46,21 +48,31 @@ export async function initComponents(): Promise<AppComponents> {
 
   const sceneSnsAdapter = scenesSnsArn
     ? createSnsAdapterComponent({ logs }, { snsArn: scenesSnsArn, snsEndpoint: optionalSnsEndpoint })
-    : undefined
+    : createNoopSnsAdapterComponent({ logs })
 
   const prioritySceneSnsAdapter = priorityScenesSnsArn
     ? createSnsAdapterComponent({ logs }, { snsArn: priorityScenesSnsArn, snsEndpoint: optionalSnsEndpoint })
-    : undefined
+    : createNoopSnsAdapterComponent({ logs })
 
   const wearableEmotesSnsAdapter = wearableEmotesSnsArn
     ? createSnsAdapterComponent({ logs }, { snsArn: wearableEmotesSnsArn, snsEndpoint: optionalSnsEndpoint })
-    : undefined
+    : createNoopSnsAdapterComponent({ logs })
 
   const storage = bucket
     ? await createAwsS3BasedFileSystemContentStorage({ fs, config }, bucket)
     : await createFolderBasedFileSystemContentStorage({ fs }, downloadsFolder)
 
-  const worldSyncService = sceneSnsAdapter ? createWorldSync({ logs, storage, fetch }, sceneSnsAdapter) : undefined
+  // Create LRU cache for tracking processed worlds
+  const worldsCache = createNormalizedLRUCache<boolean>({
+    maxItems: 10000,
+    keyNormalizer: (key) => key.toLowerCase()
+  })
+
+  // Create worlds adapter
+  const worlds = await createWorldsAdapter({ logs, config, fetch })
+
+  // Create world sync service with cache
+  const worldSyncService = createWorldSync({ logs, storage, fetch, config }, sceneSnsAdapter, worldsCache)
 
   // Create monitoring reporter
   const monitoringReporter = createMonitoringReporter({ logs, config, fetch })
@@ -157,6 +169,8 @@ export async function initComponents(): Promise<AppComponents> {
     prioritySceneSnsAdapter,
     wearableEmotesSnsAdapter,
     worldSyncService,
-    monitoringReporter
+    monitoringReporter,
+    worlds,
+    worldsCache
   }
 }

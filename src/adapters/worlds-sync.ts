@@ -1,35 +1,29 @@
 import { Readable } from 'stream'
-import { AppComponents } from '../types'
+import { BaseComponents, DeploymentToSqsWithType } from '../types'
 import { ISNSAdapterComponent } from './sns'
-import { DeploymentToSqs } from '@dcl/schemas/dist/misc/deployments-to-sqs'
 import { IBaseComponent } from '@well-known-components/interfaces'
-
-const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+import { ILRUNormalizedCache } from './lru-cache'
+import { interruptibleSleep, withRetry } from '../utils/timer'
 
 export function createWorldSync(
-  { logs, storage, fetch }: Pick<AppComponents, 'logs' | 'storage' | 'fetch'>,
-  sceneSnsAdapter: ISNSAdapterComponent | undefined
+  { logs, storage, fetch, config }: Pick<BaseComponents, 'logs' | 'storage' | 'fetch' | 'config'>,
+  sceneSnsAdapter: ISNSAdapterComponent,
+  worldsCache?: ILRUNormalizedCache<boolean>
 ): IBaseComponent {
   const logger = logs.getLogger('world-sync')
 
-  let shouldRun = false
+  let abortController: AbortController | undefined
   let backgroundTask: Promise<void> | undefined
 
-  async function fetchSceneIds(retries = 3): Promise<string[]> {
-    const url = 'https://worlds-content-server.decentraland.org/index'
+  async function fetchSceneIds(): Promise<string[]> {
+    const worldsContentServerUrl =
+      (await config.getString('WORLDS_CONTENT_SERVER_URL')) || 'https://worlds-content-server.decentraland.org'
+    const url = `${worldsContentServerUrl}/index`
 
-    for (let attempt = 1; attempt <= retries; attempt++) {
-      try {
+    return withRetry(
+      async () => {
         const response = await fetch.fetch(url)
         if (!response.ok) {
-          // Retry on 502 Bad Gateway or 503 Service Unavailable
-          if ((response.status === 502 || response.status === 503) && attempt < retries) {
-            logger.warn(
-              `HTTP ${response.status} error on attempt ${attempt}/${retries}, retrying in ${attempt * 5} seconds...`
-            )
-            await delay(attempt * 5000) // Exponential backoff
-            continue
-          }
           throw new Error(`HTTP error! Status: ${response.status}`)
         }
 
@@ -41,48 +35,55 @@ export function createWorldSync(
         // Extracting scene IDs
         const sceneIds: string[] = data.data.flatMap((world: any) => world.scenes.map((scene: any) => scene.id))
         return sceneIds
-      } catch (error) {
-        if (attempt === retries) {
-          logger.error('Error fetching scene IDs after all retries:', { error: String(error) })
-          throw new Error('Error fetching scene IDs: ' + error)
-        }
-        logger.warn(`Error on attempt ${attempt}/${retries}, retrying...`, { error: String(error) })
-        await delay(attempt * 5000) // Exponential backoff
+      },
+      {
+        logger,
+        maxRetries: 3,
+        baseDelay: 5000
       }
-    }
-
-    // This should never be reached due to the throw in the catch block
-    throw new Error('Failed to fetch scene IDs')
+    )
   }
 
   async function run(): Promise<void> {
-    shouldRun = true
+    abortController = new AbortController()
 
-    if (sceneSnsAdapter === undefined) {
-      logger.error('World sync requires sceneSnsAdapter')
-      return
-    }
+    const worldsContentServerUrl =
+      (await config.getString('WORLDS_CONTENT_SERVER_URL')) || 'https://worlds-content-server.decentraland.org'
+    const syncIntervalMs = (await config.getNumber('WORLDS_SYNC_INTERVAL_MS')) || 600000
 
-    logger.info('World sync service started')
-    while (shouldRun) {
+    logger.info('World sync service started', { worldsContentServerUrl, syncIntervalMs })
+
+    while (!abortController.signal.aborted) {
       try {
         const sceneIds = await fetchSceneIds()
         for (const sceneId of sceneIds) {
+          if (abortController.signal.aborted) break
+
           const storeKey = `${sceneId}-v2`
           try {
-            if (!(await storage.exist(storeKey))) {
-              const deploymentToSqs: DeploymentToSqs = {
+            // Check LRU cache first if available, otherwise fall back to storage
+            const isInCache = worldsCache?.has(storeKey)
+            const alreadyProcessed = isInCache || (await storage.exist(storeKey))
+
+            if (!alreadyProcessed) {
+              const deploymentToSqs: DeploymentToSqsWithType = {
                 entity: {
                   entityId: sceneId,
+                  entityType: 'scene',
                   authChain: []
                 },
-                contentServerUrls: ['https://worlds-content-server.decentraland.org']
+                contentServerUrls: [worldsContentServerUrl]
               }
 
               // send sns
               await sceneSnsAdapter.publish(deploymentToSqs)
 
               await storage.storeStream(storeKey, Readable.from([]))
+
+              // Update cache if available
+              if (worldsCache) {
+                worldsCache.set(storeKey, true)
+              }
 
               logger.info('World deployed ' + sceneId)
             }
@@ -95,10 +96,10 @@ export function createWorldSync(
         // Continue the loop even if fetching fails
       }
 
-      if (!shouldRun) break
+      if (abortController.signal.aborted) break
 
-      logger.info('Wait 10 minutes')
-      await delay(600000) // 10 minutes
+      logger.info(`Wait ${syncIntervalMs / 60000} minutes`)
+      await interruptibleSleep(syncIntervalMs, abortController.signal)
     }
 
     logger.info('World sync loop stopped')
@@ -110,7 +111,7 @@ export function createWorldSync(
 
   async function stop(): Promise<void> {
     logger.info('Stopping world sync...')
-    shouldRun = false
+    abortController?.abort()
     await backgroundTask
   }
 

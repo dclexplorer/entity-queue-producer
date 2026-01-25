@@ -9,9 +9,26 @@ import type {
   IMetricsComponent
 } from '@well-known-components/interfaces'
 import { IContentStorageComponent, IFileSystemComponent } from '@dcl/catalyst-storage'
+import { Entity } from '@dcl/schemas'
+import { DeploymentToSqs } from '@dcl/schemas/dist/misc/deployments-to-sqs'
 import { metricDeclarations } from './metrics'
 import { ISNSAdapterComponent } from './adapters/sns'
 import { IMonitoringReporter } from './adapters/monitoring-reporter'
+import { ILRUNormalizedCache } from './adapters/lru-cache'
+
+export interface IWorldsComponent {
+  getWorld(worldId: string, worldContentServerUrl?: string): Promise<Entity | null>
+  isWorldDeployment(event: DeploymentToSqs): boolean
+}
+
+/**
+ * Extended DeploymentToSqs that includes entityType for routing and identification
+ */
+export type DeploymentToSqsWithType = DeploymentToSqs & {
+  entity: {
+    entityType: string
+  }
+}
 
 export type GlobalContext = {
   components: BaseComponents
@@ -29,16 +46,18 @@ export type BaseComponents = {
   storage: IContentStorageComponent
   synchronizer: SynchronizerComponent
   deployer: IDeployerComponent
+  sceneSnsAdapter: ISNSAdapterComponent
+  prioritySceneSnsAdapter: ISNSAdapterComponent
+  wearableEmotesSnsAdapter: ISNSAdapterComponent
 }
 
 // components used in runtime
 export type AppComponents = BaseComponents & {
   statusChecks: IBaseComponent
-  sceneSnsAdapter?: ISNSAdapterComponent
-  prioritySceneSnsAdapter?: ISNSAdapterComponent
-  wearableEmotesSnsAdapter?: ISNSAdapterComponent
   worldSyncService?: IBaseComponent
   monitoringReporter: IMonitoringReporter
+  worlds?: IWorldsComponent
+  worldsCache?: ILRUNormalizedCache<boolean>
 }
 
 // components used in tests
