@@ -7,11 +7,21 @@ export function createDeployerComponent(
   components: Pick<AppComponents, 'logs' | 'storage' | 'downloadQueue' | 'fetch' | 'metrics'>,
   {
     sceneSnsAdapter,
-    wearableEmotesSnsAdapter
-  }: { sceneSnsAdapter: ISNSAdapterComponent; wearableEmotesSnsAdapter: ISNSAdapterComponent },
-  rectFilter: string | undefined
+    wearableSnsAdapter,
+    emoteSnsAdapter
+  }: {
+    sceneSnsAdapter: ISNSAdapterComponent
+    wearableSnsAdapter: ISNSAdapterComponent
+    emoteSnsAdapter: ISNSAdapterComponent
+  },
+  rectFilter: string | undefined,
+  disableScenes: boolean = false
 ): IDeployerComponent {
   const logger = components.logs.getLogger('downloader')
+
+  if (disableScenes) {
+    logger.info('Scene publishing is DISABLED')
+  }
 
   return {
     async deployEntity(entity, servers) {
@@ -20,8 +30,8 @@ export function createDeployerComponent(
         const exists = await components.storage.exist(entity.entityId)
 
         const isSceneEntity = entity.entityType === 'scene'
-
-        const isWearableEmotesEntity = entity.entityType === 'wearable' || entity.entityType === 'emote'
+        const isWearableEntity = entity.entityType === 'wearable'
+        const isEmoteEntity = entity.entityType === 'emote'
 
         if (rectFilter && entity.pointers && isSceneEntity) {
           const pointers = entity.pointers
@@ -43,7 +53,7 @@ export function createDeployerComponent(
           }
         }
 
-        if (exists || (!isSceneEntity && !isWearableEmotesEntity)) {
+        if (exists || (!isSceneEntity && !isWearableEntity && !isEmoteEntity)) {
           return await markAsDeployed()
         }
 
@@ -65,12 +75,16 @@ export function createDeployerComponent(
           }
 
           // send sns
-          if (isSceneEntity) {
+          if (isSceneEntity && !disableScenes) {
             await sceneSnsAdapter.publish(deploymentToSqs)
           }
 
-          if (isWearableEmotesEntity) {
-            await wearableEmotesSnsAdapter.publish(deploymentToSqs)
+          if (isWearableEntity) {
+            await wearableSnsAdapter.publish(deploymentToSqs)
+          }
+
+          if (isEmoteEntity) {
+            await emoteSnsAdapter.publish(deploymentToSqs)
           }
           await markAsDeployed()
         })

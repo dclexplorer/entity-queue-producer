@@ -48,7 +48,8 @@ export type BaseComponents = {
   deployer: IDeployerComponent
   sceneSnsAdapter: ISNSAdapterComponent
   prioritySceneSnsAdapter: ISNSAdapterComponent
-  wearableEmotesSnsAdapter: ISNSAdapterComponent
+  wearableSnsAdapter: ISNSAdapterComponent
+  emoteSnsAdapter: ISNSAdapterComponent
 }
 
 // components used in runtime

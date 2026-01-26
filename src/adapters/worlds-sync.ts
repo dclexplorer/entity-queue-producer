@@ -106,6 +106,11 @@ export function createWorldSync(
   }
 
   async function start(_: IBaseComponent.ComponentStartOptions): Promise<void> {
+    const disableWorlds = (await config.getString('DISABLE_WORLDS')) === 'true'
+    if (disableWorlds) {
+      logger.info('World sync is DISABLED')
+      return
+    }
     backgroundTask = run().catch((err) => logger.error('Sync task crashed: ', err))
   }
 

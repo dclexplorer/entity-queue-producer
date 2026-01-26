@@ -44,7 +44,8 @@ export async function initComponents(): Promise<AppComponents> {
   const optionalSnsEndpoint = await config.getString('SNS_ENDPOINT')
   const scenesSnsArn = await config.getString('SCENE_SNS_ARN')
   const priorityScenesSnsArn = await config.getString('PRIORITY_SCENE_SNS_ARN')
-  const wearableEmotesSnsArn = await config.getString('WEARABLE_EMOTES_SNS')
+  const wearableSnsArn = await config.getString('WEARABLE_SNS_ARN')
+  const emoteSnsArn = await config.getString('EMOTE_SNS_ARN')
 
   const sceneSnsAdapter = scenesSnsArn
     ? createSnsAdapterComponent({ logs }, { snsArn: scenesSnsArn, snsEndpoint: optionalSnsEndpoint })
@@ -54,8 +55,12 @@ export async function initComponents(): Promise<AppComponents> {
     ? createSnsAdapterComponent({ logs }, { snsArn: priorityScenesSnsArn, snsEndpoint: optionalSnsEndpoint })
     : createNoopSnsAdapterComponent({ logs })
 
-  const wearableEmotesSnsAdapter = wearableEmotesSnsArn
-    ? createSnsAdapterComponent({ logs }, { snsArn: wearableEmotesSnsArn, snsEndpoint: optionalSnsEndpoint })
+  const wearableSnsAdapter = wearableSnsArn
+    ? createSnsAdapterComponent({ logs }, { snsArn: wearableSnsArn, snsEndpoint: optionalSnsEndpoint })
+    : createNoopSnsAdapterComponent({ logs })
+
+  const emoteSnsAdapter = emoteSnsArn
+    ? createSnsAdapterComponent({ logs }, { snsArn: emoteSnsArn, snsEndpoint: optionalSnsEndpoint })
     : createNoopSnsAdapterComponent({ logs })
 
   const storage = bucket
@@ -84,10 +89,12 @@ export async function initComponents(): Promise<AppComponents> {
   })
 
   const rectFilter = await config.getString('RECT_FILTER')
+  const disableScenes = (await config.getString('DISABLE_SCENES')) === 'true'
   const deployer = createDeployerComponent(
     { storage, downloadQueue, fetch, logs, metrics },
-    { sceneSnsAdapter, wearableEmotesSnsAdapter },
-    rectFilter
+    { sceneSnsAdapter, wearableSnsAdapter, emoteSnsAdapter },
+    rectFilter,
+    disableScenes
   )
 
   const key = (hash: string) => `stored-snapshot-${hash}`
@@ -167,7 +174,8 @@ export async function initComponents(): Promise<AppComponents> {
     deployer,
     sceneSnsAdapter,
     prioritySceneSnsAdapter,
-    wearableEmotesSnsAdapter,
+    wearableSnsAdapter,
+    emoteSnsAdapter,
     worldSyncService,
     monitoringReporter,
     worlds,
