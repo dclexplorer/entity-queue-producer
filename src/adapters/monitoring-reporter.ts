@@ -10,6 +10,13 @@ interface MonitoringReporterComponents {
   fetch: IFetchComponent
 }
 
+type EntityType = 'scene' | 'wearable' | 'emote'
+
+interface QueueConfig {
+  entityType: EntityType
+  url: string
+}
+
 export function createMonitoringReporter(
   components: MonitoringReporterComponents
 ): IMonitoringReporter {
@@ -18,15 +25,14 @@ export function createMonitoringReporter(
 
   let monitoringUrl: string | undefined
   let monitoringSecret: string | undefined
-  let sqsQueueUrl: string | undefined
   let sqsClient: SQSClient | undefined
+  let queueConfigs: QueueConfig[] = []
   let reportInterval: NodeJS.Timeout | undefined
   let isRunning = false
 
   async function initConfig() {
     monitoringUrl = await config.getString('MONITORING_URL')
     monitoringSecret = await config.getString('MONITORING_SECRET')
-    sqsQueueUrl = await config.getString('SQS_QUEUE_URL')
     const awsRegion = await config.getString('AWS_REGION') || 'us-east-1'
 
     if (!monitoringUrl || !monitoringSecret) {
@@ -35,28 +41,46 @@ export function createMonitoringReporter(
       logger.info('Monitoring configured', { monitoringUrl })
     }
 
-    if (sqsQueueUrl) {
+    // Get queue URLs for each entity type
+    const sceneQueueUrl = await config.getString('SQS_QUEUE_URL') || await config.getString('SQS_SCENE_QUEUE_URL')
+    const wearableQueueUrl = await config.getString('SQS_WEARABLE_QUEUE_URL')
+    const emoteQueueUrl = await config.getString('SQS_EMOTE_QUEUE_URL')
+
+    queueConfigs = []
+    if (sceneQueueUrl) {
+      queueConfigs.push({ entityType: 'scene', url: sceneQueueUrl })
+    }
+    if (wearableQueueUrl) {
+      queueConfigs.push({ entityType: 'wearable', url: wearableQueueUrl })
+    }
+    if (emoteQueueUrl) {
+      queueConfigs.push({ entityType: 'emote', url: emoteQueueUrl })
+    }
+
+    if (queueConfigs.length > 0) {
       try {
         sqsClient = new SQSClient({ region: awsRegion })
-        logger.info('SQS queue monitoring enabled', { sqsQueueUrl })
+        logger.info('SQS queue monitoring enabled', {
+          queues: queueConfigs.map(q => `${q.entityType}: ${q.url}`).join(', ')
+        })
       } catch (error) {
         logger.error('Failed to create SQS client', {
           error: error instanceof Error ? error.message : 'Unknown error'
         })
       }
     } else {
-      logger.info('SQS queue monitoring not configured (SQS_QUEUE_URL missing)')
+      logger.info('SQS queue monitoring not configured (no queue URLs provided)')
     }
   }
 
-  async function getQueueDepth(): Promise<number> {
-    if (!sqsClient || !sqsQueueUrl) {
+  async function getQueueDepth(queueUrl: string): Promise<number> {
+    if (!sqsClient || !queueUrl) {
       return 0
     }
 
     try {
       const command = new GetQueueAttributesCommand({
-        QueueUrl: sqsQueueUrl,
+        QueueUrl: queueUrl,
         AttributeNames: [QueueAttributeName.ApproximateNumberOfMessages]
       })
       const response = await sqsClient.send(command)
@@ -64,6 +88,7 @@ export function createMonitoringReporter(
       return count ? parseInt(count, 10) : 0
     } catch (error) {
       logger.debug('Failed to get SQS queue depth', {
+        queueUrl,
         error: error instanceof Error ? error.message : 'Unknown error'
       })
       return 0
@@ -105,14 +130,22 @@ export function createMonitoringReporter(
   }
 
   async function sendQueueMetrics() {
-    logger.info('sendQueueMetrics called')
-    const queueDepth = await getQueueDepth()
+    logger.debug('sendQueueMetrics called')
 
-    logger.info('Reporting queue metrics', { queueDepth })
+    // Report metrics for each configured queue
+    for (const queueConfig of queueConfigs) {
+      const queueDepth = await getQueueDepth(queueConfig.url)
 
-    await report('/api/monitoring/queue-metrics', {
-      queueDepth
-    })
+      logger.info('Reporting queue metrics', {
+        entityType: queueConfig.entityType,
+        queueDepth
+      })
+
+      await report('/api/monitoring/queue-metrics', {
+        queueDepth,
+        entityType: queueConfig.entityType
+      })
+    }
   }
 
   function startReporting() {
@@ -121,7 +154,14 @@ export function createMonitoringReporter(
       return
     }
 
-    logger.info('Starting queue metrics reporting (every 30s)')
+    if (queueConfigs.length === 0) {
+      logger.info('No queues configured, skipping metrics reporting')
+      return
+    }
+
+    logger.info('Starting queue metrics reporting (every 30s)', {
+      queues: queueConfigs.map(q => q.entityType).join(', ')
+    })
 
     // Send initial report
     sendQueueMetrics().catch(err => {
