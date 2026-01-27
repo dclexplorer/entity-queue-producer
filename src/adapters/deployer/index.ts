@@ -9,11 +9,7 @@ export function createDeployerComponent(
     sceneSnsAdapter,
     wearableSnsAdapter,
     emoteSnsAdapter
-  }: {
-    sceneSnsAdapter: ISNSAdapterComponent
-    wearableSnsAdapter: ISNSAdapterComponent
-    emoteSnsAdapter: ISNSAdapterComponent
-  },
+  }: { sceneSnsAdapter: ISNSAdapterComponent; wearableSnsAdapter: ISNSAdapterComponent; emoteSnsAdapter: ISNSAdapterComponent },
   rectFilter: string | undefined,
   disableScenes: boolean = false
 ): IDeployerComponent {
@@ -74,7 +70,7 @@ export function createDeployerComponent(
             contentServerUrls: servers
           }
 
-          // send sns
+          // send to appropriate SNS based on entity type
           if (isSceneEntity && !disableScenes) {
             await sceneSnsAdapter.publish(deploymentToSqs)
           }
