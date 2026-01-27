@@ -28,7 +28,7 @@ RUN yarn run build
 #RUN yarn run test
 
 # remove devDependencies, keep only used dependencies
-RUN yarn install --frozen-lockfile --production
+RUN rm -rf node_modules && npm ci --omit=dev --ignore-scripts
 
 ########################## END OF BUILD STAGE ##########################
 
