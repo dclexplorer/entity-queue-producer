@@ -1,11 +1,13 @@
-import { HandlerContextWithPath } from '../../types'
+import { HandlerContextWithPath, DeploymentToSqsWithType } from '../../types'
+
+type EntityType = 'scene' | 'wearable' | 'emote'
 
 // handlers arguments only type what they need, to make unit testing easier
 export async function addQueueHandler(
-  context: HandlerContextWithPath<'sceneSnsAdapter' | 'prioritySceneSnsAdapter' | 'config', '/queue-task'>
+  context: HandlerContextWithPath<'sceneSnsAdapter' | 'prioritySceneSnsAdapter' | 'wearableSnsAdapter' | 'emoteSnsAdapter' | 'config', '/queue-task'>
 ) {
   const {
-    components: { sceneSnsAdapter, prioritySceneSnsAdapter, config },
+    components: { sceneSnsAdapter, prioritySceneSnsAdapter, wearableSnsAdapter, emoteSnsAdapter, config },
     request,
     url
   } = context
@@ -15,22 +17,44 @@ export async function addQueueHandler(
 
   const body = await request.json()
 
-  //if (!DeploymentToSqs.validate(body)) return { status: 403, body: { errors: DeploymentToSqs.validate.errors } }
-
+  // Extract entityType for routing, default to 'scene'
+  const entityType: EntityType = (body as any)?.entity?.entityType || 'scene'
   const shouldPrioritize = !!(body as any)?.prioritize
 
-  if (shouldPrioritize) {
-    if (prioritySceneSnsAdapter) {
-      await prioritySceneSnsAdapter.publish(body)
-    } else {
-      return { status: 500, body: 'Missing priority scene sns configuration' }
-    }
-  } else {
-    if (sceneSnsAdapter) {
-      await sceneSnsAdapter.publish(body)
-    } else {
-      return { status: 500, body: 'Missing scene sns configuration' }
-    }
+  // Route based on entity type
+  switch (entityType) {
+    case 'wearable':
+      if (wearableSnsAdapter) {
+        await wearableSnsAdapter.publish(body as DeploymentToSqsWithType)
+      } else {
+        return { status: 500, body: 'Missing wearable sns configuration' }
+      }
+      break
+
+    case 'emote':
+      if (emoteSnsAdapter) {
+        await emoteSnsAdapter.publish(body as DeploymentToSqsWithType)
+      } else {
+        return { status: 500, body: 'Missing emote sns configuration' }
+      }
+      break
+
+    case 'scene':
+    default:
+      if (shouldPrioritize) {
+        if (prioritySceneSnsAdapter) {
+          await prioritySceneSnsAdapter.publish(body as DeploymentToSqsWithType)
+        } else {
+          return { status: 500, body: 'Missing priority scene sns configuration' }
+        }
+      } else {
+        if (sceneSnsAdapter) {
+          await sceneSnsAdapter.publish(body as DeploymentToSqsWithType)
+        } else {
+          return { status: 500, body: 'Missing scene sns configuration' }
+        }
+      }
+      break
   }
 
   return {
