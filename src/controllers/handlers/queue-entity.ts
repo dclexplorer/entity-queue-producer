@@ -4,7 +4,10 @@ type EntityType = 'scene' | 'wearable' | 'emote'
 
 // handlers arguments only type what they need, to make unit testing easier
 export async function addQueueHandler(
-  context: HandlerContextWithPath<'sceneSnsAdapter' | 'prioritySceneSnsAdapter' | 'wearableSnsAdapter' | 'emoteSnsAdapter' | 'config', '/queue-task'>
+  context: HandlerContextWithPath<
+    'sceneSnsAdapter' | 'prioritySceneSnsAdapter' | 'wearableSnsAdapter' | 'emoteSnsAdapter' | 'config',
+    '/queue-task'
+  >
 ) {
   const {
     components: { sceneSnsAdapter, prioritySceneSnsAdapter, wearableSnsAdapter, emoteSnsAdapter, config },
@@ -21,7 +24,17 @@ export async function addQueueHandler(
   const entityType: EntityType = (body as any)?.entity?.entityType || 'scene'
   const shouldPrioritize = !!(body as any)?.prioritize
 
-  // Route based on entity type
+  // Priority queue is shared across all entity types - entityType is preserved in the message
+  if (shouldPrioritize) {
+    if (prioritySceneSnsAdapter) {
+      await prioritySceneSnsAdapter.publish(body as DeploymentToSqsWithType)
+    } else {
+      return { status: 500, body: 'Missing priority sns configuration' }
+    }
+    return { body: url.pathname }
+  }
+
+  // Non-priority: route based on entity type
   switch (entityType) {
     case 'wearable':
       if (wearableSnsAdapter) {
@@ -41,18 +54,10 @@ export async function addQueueHandler(
 
     case 'scene':
     default:
-      if (shouldPrioritize) {
-        if (prioritySceneSnsAdapter) {
-          await prioritySceneSnsAdapter.publish(body as DeploymentToSqsWithType)
-        } else {
-          return { status: 500, body: 'Missing priority scene sns configuration' }
-        }
+      if (sceneSnsAdapter) {
+        await sceneSnsAdapter.publish(body as DeploymentToSqsWithType)
       } else {
-        if (sceneSnsAdapter) {
-          await sceneSnsAdapter.publish(body as DeploymentToSqsWithType)
-        } else {
-          return { status: 500, body: 'Missing scene sns configuration' }
-        }
+        return { status: 500, body: 'Missing scene sns configuration' }
       }
       break
   }

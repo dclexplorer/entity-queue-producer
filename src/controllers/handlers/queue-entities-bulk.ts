@@ -21,7 +21,10 @@ interface BulkQueueResult {
 
 // Handler for bulk queue operations - accepts multiple entities at once
 export async function addQueueBulkHandler(
-  context: HandlerContextWithPath<'sceneSnsAdapter' | 'prioritySceneSnsAdapter' | 'wearableSnsAdapter' | 'emoteSnsAdapter' | 'config' | 'logs', '/queue-tasks'>
+  context: HandlerContextWithPath<
+    'sceneSnsAdapter' | 'prioritySceneSnsAdapter' | 'wearableSnsAdapter' | 'emoteSnsAdapter' | 'config' | 'logs',
+    '/queue-tasks'
+  >
 ) {
   const {
     components: { sceneSnsAdapter, prioritySceneSnsAdapter, wearableSnsAdapter, emoteSnsAdapter, config, logs },
@@ -68,36 +71,41 @@ export async function addQueueBulkHandler(
         contentServerUrls: item.contentServerUrls || ['https://peer.decentraland.org/content']
       }
 
-      // Route based on entity type
-      switch (entityType) {
-        case 'wearable':
-          if (!wearableSnsAdapter) {
-            results.failed.push({ entityId, error: 'Missing wearable sns configuration' })
-            continue
-          }
-          await wearableSnsAdapter.publish(payload)
-          break
+      // Priority queue is shared across all entity types - entityType is preserved in the message
+      if (shouldPrioritize) {
+        if (!prioritySceneSnsAdapter) {
+          results.failed.push({ entityId, error: 'Missing priority sns configuration' })
+          continue
+        }
+        await prioritySceneSnsAdapter.publish(payload)
+      } else {
+        // Non-priority: route based on entity type
+        switch (entityType) {
+          case 'wearable':
+            if (!wearableSnsAdapter) {
+              results.failed.push({ entityId, error: 'Missing wearable sns configuration' })
+              continue
+            }
+            await wearableSnsAdapter.publish(payload)
+            break
 
-        case 'emote':
-          if (!emoteSnsAdapter) {
-            results.failed.push({ entityId, error: 'Missing emote sns configuration' })
-            continue
-          }
-          await emoteSnsAdapter.publish(payload)
-          break
+          case 'emote':
+            if (!emoteSnsAdapter) {
+              results.failed.push({ entityId, error: 'Missing emote sns configuration' })
+              continue
+            }
+            await emoteSnsAdapter.publish(payload)
+            break
 
-        case 'scene':
-        default:
-          const sceneAdapter = shouldPrioritize ? prioritySceneSnsAdapter : sceneSnsAdapter
-          if (!sceneAdapter) {
-            results.failed.push({
-              entityId,
-              error: shouldPrioritize ? 'Missing priority scene sns configuration' : 'Missing scene sns configuration'
-            })
-            continue
-          }
-          await sceneAdapter.publish(payload)
-          break
+          case 'scene':
+          default:
+            if (!sceneSnsAdapter) {
+              results.failed.push({ entityId, error: 'Missing scene sns configuration' })
+              continue
+            }
+            await sceneSnsAdapter.publish(payload)
+            break
+        }
       }
 
       results.success.push(entityId)
